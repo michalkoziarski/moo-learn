@@ -58,7 +58,7 @@ class MLPClassifier(BaseEstimator, ClassifierMixin):
 
         return nn.Sequential(*layers)
 
-    def _get_batch_size(self, n_samples: int, default: int = 200):
+    def _get_batch_size(self, n_samples: int, default: int = 200) -> int:
         if self.batch_size == "auto":
             batch_size = min(default, n_samples)
         else:
@@ -66,7 +66,7 @@ class MLPClassifier(BaseEstimator, ClassifierMixin):
 
         return batch_size
 
-    def _get_device(self):
+    def _get_device(self) -> torch.device:
         if self.device == "auto":
             if torch.cuda.is_available():
                 device = torch.device("cuda")
