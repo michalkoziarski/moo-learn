@@ -134,7 +134,7 @@ class MLPClassifier(BaseEstimator, ClassifierMixin):
 
         self.model.eval()
 
-        dataset = TensorDataset(torch.Tensor(X), torch.Tensor(y).long())
+        dataset = TensorDataset(torch.Tensor(X))
         loader = DataLoader(dataset, batch_size=self._get_batch_size(n_samples))
 
         predictions = []
