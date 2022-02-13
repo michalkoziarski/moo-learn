@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -10,14 +10,20 @@ from torch.nn import functional as F
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 
+from ._cosmos import circle_points
+
 
 class MLPClassifier(BaseEstimator, ClassifierMixin):
     def __init__(
         self,
+        objectives: List[nn.modules.Module],
         hidden_layer_sizes: Tuple = (100,),
         activation: nn.modules.Module = nn.ReLU,
         *,
-        alpha: float = 0.0001,
+        alpha: float = 1.2,
+        lambd: float = 2.0,
+        n_test_rays: int = 25,
+        weight_decay: float = 0.0001,
         batch_size: Union[int, str] = "auto",
         learning_rate: float = 0.001,
         max_iter: int = 200,
@@ -25,9 +31,13 @@ class MLPClassifier(BaseEstimator, ClassifierMixin):
         verbose: bool = False,
         device: Union[torch.device, str] = "auto",
     ):
+        self.objectives = objectives
         self.hidden_layer_size = hidden_layer_sizes
         self.activation = activation
         self.alpha = alpha
+        self.lambd = lambd
+        self.n_test_rays = n_test_rays
+        self.weight_decay = weight_decay
         self.batch_size = batch_size
         self.learning_rate = learning_rate
         self.max_iter = max_iter
@@ -42,7 +52,7 @@ class MLPClassifier(BaseEstimator, ClassifierMixin):
 
         for i in range(len(self.hidden_layer_size) + 1):
             if i == 0:
-                input_dim = n_features
+                input_dim = n_features + len(self.objectives)
             else:
                 input_dim = self.hidden_layer_size[i - 1]
 
@@ -98,10 +108,10 @@ class MLPClassifier(BaseEstimator, ClassifierMixin):
         )
 
         optimizer = optim.Adam(
-            self.model.parameters(), lr=self.learning_rate, weight_decay=self.alpha
+            self.model.parameters(),
+            lr=self.learning_rate,
+            weight_decay=self.weight_decay,
         )
-
-        criterion = nn.CrossEntropyLoss()
 
         for epoch in range(self.max_iter):
             if self.verbose:
@@ -109,46 +119,96 @@ class MLPClassifier(BaseEstimator, ClassifierMixin):
             else:
                 iterator = train_loader
 
-            losses = []
+            losses = {
+                k: []
+                for k in ["Total loss", "Cos. sim."]
+                + [f"O{i + 1}" for i, _ in enumerate(self.objectives)]
+            }
 
             for batch in iterator:
-                inputs, targets = batch[0].to(device), batch[1].to(device)
-
                 optimizer.zero_grad()
 
+                inputs, targets = batch[0].to(device), batch[1].to(device)
+
+                alphas = torch.from_numpy(
+                    np.random.dirichlet([self.alpha for _ in self.objectives], 1)
+                    .astype(np.float32)
+                    .flatten()
+                ).to(device)
+
+                inputs = torch.cat((inputs, alphas.repeat(inputs.shape[0], 1)), dim=1)
                 outputs = self.model(inputs)
-                loss = criterion(outputs, targets)
-                loss.backward()
+
+                total_loss = 0.0
+                objective_losses = []
+
+                for alpha, objective in zip(alphas, self.objectives):
+                    objective_loss = objective(outputs, targets)
+                    total_loss += alpha * objective_loss
+                    objective_losses.append(objective_loss)
+
+                cos_sim = F.cosine_similarity(
+                    torch.stack(objective_losses), alphas, dim=0
+                )
+
+                total_loss -= self.lambd * cos_sim
+                total_loss.backward()
+
                 optimizer.step()
 
                 if self.verbose:
-                    losses.append(loss.cpu().detach().numpy())
+                    losses["Total loss"].append(total_loss.cpu().detach().numpy())
+                    losses["Cos. sim."].append(cos_sim.cpu().detach().numpy())
+
+                    for i, l in enumerate(objective_losses):
+                        losses[f"O{i + 1}"].append(l.cpu().detach().numpy())
+
+                    loss_string = ", ".join(
+                        [f"{k}: {np.mean(v):.4f}" for k, v in losses.items()]
+                    )
 
                     iterator.set_description(
-                        f"Epoch {epoch + 1}/{self.max_iter}. Train loss: {loss:.4f}."
+                        f"Epoch {epoch + 1}/{self.max_iter}. {loss_string}."
                     )
 
         return self
 
-    def predict_proba(self, X: np.ndarray) -> np.ndarray:
+    def predict_proba(
+        self, X: np.ndarray, test_rays: Optional[np.ndarray] = None
+    ) -> np.ndarray:
         n_samples = X.shape[0]
+        device = self._get_device()
 
         self.model.eval()
 
         dataset = TensorDataset(torch.Tensor(X))
         loader = DataLoader(dataset, batch_size=self._get_batch_size(n_samples))
 
-        predictions = []
+        if test_rays is None:
+            test_rays = circle_points(self.n_test_rays, dim=len(self.objectives))
+
+        predictions = [[] for _ in test_rays]
 
         with torch.no_grad():
             for batch in loader:
-                inputs = batch[0].to(self._get_device())
-                outputs = F.softmax(self.model(inputs), dim=1)
+                inputs = batch[0].to(device)
 
-                for output in outputs:
-                    predictions.append(output.cpu().detach().numpy())
+                for i, ray in enumerate(test_rays):
+                    ray = torch.from_numpy(ray.astype(np.float32)).to(device)
+                    ray /= ray.sum()
+
+                    x = torch.cat((inputs, ray.repeat(inputs.shape[0], 1)), dim=1)
+
+                    outputs = F.softmax(self.model(x), dim=1)
+
+                    for output in outputs:
+                        predictions[i].append(output.cpu().detach().numpy())
 
         return np.array(predictions)
 
-    def predict(self, X: np.ndarray) -> np.ndarray:
-        return np.argmax(self.predict_proba(X), axis=1)
+    def predict(
+        self, X: np.ndarray, test_rays: Optional[np.ndarray] = None
+    ) -> np.ndarray:
+        probas = self.predict_proba(X, test_rays)
+
+        return np.array([np.argmax(p, axis=1) for p in probas])
