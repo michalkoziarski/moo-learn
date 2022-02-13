@@ -78,8 +78,9 @@ class MLPClassifier(BaseEstimator, ClassifierMixin):
         return device
 
     def fit(self, X: np.ndarray, y: np.ndarray) -> MLPClassifier:
-        torch.manual_seed(self.random_state)
-        np.random.seed(self.random_state)
+        if self.random_state is not None:
+            torch.manual_seed(self.random_state)
+            np.random.seed(self.random_state)
 
         n_features = X.shape[1]
         n_classes = len(np.unique(y))
