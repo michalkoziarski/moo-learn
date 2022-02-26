@@ -1,3 +1,4 @@
+import argparse
 import logging
 from pathlib import Path
 from warnings import simplefilter
@@ -43,6 +44,14 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     simplefilter("ignore", category=ConvergenceWarning)
 
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("-max_iter", type=int)
+    parser.add_argument("-n_layers", type=int)
+    parser.add_argument("-n_test_rays", type=int)
+
+    args = parser.parse_args()
+
     datasets = load_all()
 
     rows = []
@@ -53,7 +62,9 @@ if __name__ == "__main__":
         for i, ((X_train, y_train), (X_test, y_test)) in enumerate(folds):
             n_classes = len(np.unique(y_test))
 
-            clf = MLPClassifier()
+            clf = MLPClassifier(
+                hidden_layer_sizes=(100,) * args.n_layers, max_iter=args.max_iter
+            )
             clf.fit(X_train, y_train)
             pred = clf.predict(X_test)
             acc = accuracy_score(y_test, pred)
@@ -62,7 +73,12 @@ if __name__ == "__main__":
             rows.append([dataset_name, i, "MLP", acc, bac])
 
             objectives = [OVACrossEntropyLoss(cls=cls) for cls in range(n_classes)]
-            clf = MOMLPClassifier(objectives)
+            clf = MOMLPClassifier(
+                objectives,
+                hidden_layer_sizes=(100,) * args.n_layers,
+                max_iter=args.max_iter,
+                n_test_rays=args.n_test_rays,
+            )
             clf.fit(X_train, y_train)
             proba = clf.predict_proba(X_test).mean(axis=0)
             pred = proba.argmax(axis=1)
@@ -87,5 +103,7 @@ if __name__ == "__main__":
     for path in [RESULTS_FULL_PATH, RESULTS_SUMMARY_PATH]:
         path.mkdir(exist_ok=True, parents=True)
 
-    df_full.to_csv(RESULTS_FULL_PATH / "test.csv", index=False)
-    df_summary.to_csv(RESULTS_SUMMARY_PATH / "test.csv", index=False)
+    trial_name = f"max_iter={args.max_iter}_n_layers={args.n_layers}_n_test_rays={args.n_test_rays}"
+
+    df_full.to_csv(RESULTS_FULL_PATH / f"{trial_name}.csv", index=False)
+    df_summary.to_csv(RESULTS_SUMMARY_PATH / f"{trial_name}.csv", index=False)
