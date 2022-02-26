@@ -87,5 +87,5 @@ if __name__ == "__main__":
     for path in [RESULTS_FULL_PATH, RESULTS_SUMMARY_PATH]:
         path.mkdir(exist_ok=True, parents=True)
 
-    df_full.to_csv(RESULTS_FULL_PATH / "test.csv")
-    df_summary.to_csv(RESULTS_SUMMARY_PATH / "test.csv")
+    df_full.to_csv(RESULTS_FULL_PATH / "test.csv", index=False)
+    df_summary.to_csv(RESULTS_SUMMARY_PATH / "test.csv", index=False)
