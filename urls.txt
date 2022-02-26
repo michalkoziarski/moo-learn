@@ -1,0 +1,7 @@
+https://sci2s.ugr.es/keel/dataset/data/classification/movement_libras.zip
+https://sci2s.ugr.es/keel/dataset/data/classification/texture.zip
+https://sci2s.ugr.es/keel/dataset/data/classification/vowel.zip
+https://sci2s.ugr.es/keel/dataset/data/classification/winequality-red.zip
+https://sci2s.ugr.es/keel/dataset/data/classification/winequality-white.zip
+https://sci2s.ugr.es/keel/dataset/data/classification/yeast.zip
+https://sci2s.ugr.es/keel/dataset/data/classification/segment.zip
