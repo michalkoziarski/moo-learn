@@ -7,6 +7,6 @@
 #SBATCH --gres=gpu
 #SBATCH -A plgimba2
 
-module add plgrid/tools/python/3.8
+module add plgrid/tools/python/3.9
 
 python3 -W ignore ${1} ${@:2}
