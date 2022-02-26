@@ -40,6 +40,7 @@ class OVACrossEntropyLoss(_Loss):
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     simplefilter("ignore", category=ConvergenceWarning)
 
     datasets = load_all()
